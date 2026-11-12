@@ -1,0 +1,237 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: zdorovie-postgres
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-zdorovie_db}
+      POSTGRES_USER: ${POSTGRES_USER:-zdorovie_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-zdorovie_secret}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./deploy/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    ports:
+      - "${POSTGRES_HOST_PORT:-5432}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-zdorovie_user} -d ${POSTGRES_DB:-zdorovie_db}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - zdorovie-network
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    container_name: zdorovie-redis
+    command: >
+      sh -c 'if [ -n "$$REDIS_PASSWORD" ]; then
+        exec redis-server --appendonly yes --requirepass "$$REDIS_PASSWORD";
+      else
+        exec redis-server --appendonly yes;
+      fi'
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+    volumes:
+      - redis_data:/data
+    ports:
+      - "${REDIS_HOST_PORT:-6379}:6379"
+    healthcheck:
+      test: ["CMD-SHELL", "if [ -n \"$$REDIS_PASSWORD\" ]; then redis-cli -a \"$$REDIS_PASSWORD\" ping | grep PONG; else redis-cli ping | grep PONG; fi"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+    networks:
+      - zdorovie-network
+    restart: unless-stopped
+
+  minio:
+    image: minio/minio:RELEASE.2024-05-10T01-41-38Z
+    container_name: zdorovie-minio
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minio_admin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minio_secret_key}
+    volumes:
+      - minio_data:/data
+    ports:
+      - "9000:9000"
+      - "${MINIO_CONSOLE_PORT:-9001}:9001"
+    healthcheck:
+      # curl в образе MinIO нет; встроенный клиент mc с алиасом local проверяет готовность сервера
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+    networks:
+      - zdorovie-network
+    restart: unless-stopped
+
+  minio-init:
+    image: minio/mc:RELEASE.2024-05-09T17-04-24Z
+    container_name: zdorovie-minio-init
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: ["/bin/sh", "/init-buckets.sh"]
+    volumes:
+      - ./deploy/minio/init-buckets.sh:/init-buckets.sh:ro
+    environment:
+      MINIO_ENDPOINT: ${MINIO_ENDPOINT:-minio:9000}
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minio_admin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minio_secret_key}
+      MINIO_BUCKET_MASTER: ${MINIO_BUCKET_MASTER:-zdorovie-master}
+      MINIO_BUCKET_CLIENT: ${MINIO_BUCKET_CLIENT:-zdorovie-client-materials}
+      MINIO_BUCKET_CONSULTATIONS: ${MINIO_BUCKET_CONSULTATIONS:-zdorovie-consultations}
+    networks:
+      - zdorovie-network
+    restart: "no"
+
+  backend:
+    build:
+      context: ./services/backend
+      dockerfile: Dockerfile
+    container_name: zdorovie-backend
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    environment:
+      APP_ENV: ${APP_ENV:-local}
+      APP_DEBUG: ${APP_DEBUG:-true}
+      PORT: ${BACKEND_PORT:-8080}
+      POSTGRES_HOST: ${POSTGRES_HOST:-postgres}
+      POSTGRES_PORT: ${POSTGRES_PORT:-5432}
+      POSTGRES_DB: ${POSTGRES_DB:-zdorovie_db}
+      POSTGRES_USER: ${POSTGRES_USER:-zdorovie_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-zdorovie_secret}
+      REDIS_HOST: ${REDIS_HOST:-redis}
+      REDIS_PORT: ${REDIS_PORT:-6379}
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+      MINIO_ENDPOINT: ${MINIO_ENDPOINT:-minio:9000}
+      MINIO_PUBLIC_ENDPOINT: ${MINIO_PUBLIC_ENDPOINT:-http://localhost/s3}
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minio_admin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minio_secret_key}
+      MINIO_BUCKET_MASTER: ${MINIO_BUCKET_MASTER:-zdorovie-master}
+      MINIO_BUCKET_CLIENT: ${MINIO_BUCKET_CLIENT:-zdorovie-client-materials}
+      MINIO_BUCKET_CONSULTATIONS: ${MINIO_BUCKET_CONSULTATIONS:-zdorovie-consultations}
+      MAX_API_URL: ${MAX_API_URL:-https://platform-api2.max.ru}
+      MAX_BOT_TOKEN: ${MAX_BOT_TOKEN:-test_max_bot_token}
+      MAX_WEBHOOK_SECRET: ${MAX_WEBHOOK_SECRET:-test_max_webhook_secret_key_1234567890}
+      YOO_SHOP_ID: ${YOO_SHOP_ID:-test_shop_id}
+      YOO_SECRET_KEY: ${YOO_SECRET_KEY:-test_secret_key}
+      YOO_RETURN_URL: ${YOO_RETURN_URL:-http://localhost/cabinet/payment-success}
+      JWT_SECRET: ${JWT_SECRET:-default_secret_key_must_be_at_least_32_characters_long_for_security}
+    ports:
+      - "${BACKEND_HOST_PORT:-8080}:8080"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/healthz | grep ok || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+    networks:
+      - zdorovie-network
+    restart: unless-stopped
+
+  worker:
+    build:
+      context: ./services/worker
+      dockerfile: Dockerfile
+    container_name: zdorovie-worker
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    environment:
+      APP_ENV: ${APP_ENV:-local}
+      POSTGRES_HOST: ${POSTGRES_HOST:-postgres}
+      POSTGRES_PORT: ${POSTGRES_PORT:-5432}
+      POSTGRES_DB: ${POSTGRES_DB:-zdorovie_db}
+      POSTGRES_USER: ${POSTGRES_USER:-zdorovie_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-zdorovie_secret}
+      REDIS_HOST: ${REDIS_HOST:-redis}
+      REDIS_PORT: ${REDIS_PORT:-6379}
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+      MINIO_ENDPOINT: ${MINIO_ENDPOINT:-minio:9000}
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minio_admin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minio_secret_key}
+      MINIO_BUCKET_MASTER: ${MINIO_BUCKET_MASTER:-zdorovie-master}
+      MINIO_BUCKET_CLIENT: ${MINIO_BUCKET_CLIENT:-zdorovie-client-materials}
+    networks:
+      - zdorovie-network
+    restart: unless-stopped
+
+  ml-worker:
+    build:
+      context: ./services/ml-worker
+      dockerfile: Dockerfile
+    container_name: zdorovie-ml-worker
+    depends_on:
+      redis:
+        condition: service_healthy
+    environment:
+      REDIS_HOST: ${REDIS_HOST:-redis}
+      REDIS_PORT: ${REDIS_PORT:-6379}
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+      MINIO_ENDPOINT: ${MINIO_ENDPOINT:-minio:9000}
+      MINIO_BUCKET_CONSULTATIONS: ${MINIO_BUCKET_CONSULTATIONS:-zdorovie-consultations}
+      LLM_PROVIDER: ${LLM_PROVIDER:-mock}
+    networks:
+      - zdorovie-network
+    restart: unless-stopped
+
+  frontend-cabinet:
+    build:
+      context: ./services/frontend-cabinet
+      dockerfile: Dockerfile
+    container_name: zdorovie-frontend-cabinet
+    networks:
+      - zdorovie-network
+    restart: unless-stopped
+
+  frontend-admin:
+    build:
+      context: ./services/frontend-admin
+      dockerfile: Dockerfile
+    container_name: zdorovie-frontend-admin
+    networks:
+      - zdorovie-network
+    restart: unless-stopped
+
+  nginx:
+    image: nginx:1.27-alpine
+    container_name: zdorovie-nginx
+    depends_on:
+      backend:
+        condition: service_healthy
+      frontend-cabinet:
+        condition: service_started
+      frontend-admin:
+        condition: service_started
+      minio:
+        condition: service_healthy
+    volumes:
+      - ./deploy/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+    ports:
+      - "${NGINX_PORT:-80}:80"
+    networks:
+      - zdorovie-network
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  redis_data:
+  minio_data:
+
+networks:
+  zdorovie-network:
+    driver: bridge
