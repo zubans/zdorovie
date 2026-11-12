@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Беременность без тревоги — Личный кабинет</title>
+    <style>
+        :root {
+            --primary: #4a90e2;
+            --primary-dark: #357abd;
+            --bg: #f8fafc;
+            --card-bg: #ffffff;
+            --text: #1e293b;
+            --text-muted: #64748b;
+            --border: #e2e8f0;
+            --success: #10b981;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+            background-color: var(--bg);
+            color: var(--text);
+            margin: 0;
+            padding: 0;
+            display: flex;
+            flex-direction: column;
+            min-height: 100vh;
+        }
+        header {
+            background-color: var(--card-bg);
+            border-bottom: 1px solid var(--border);
+            padding: 1rem 2rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .logo {
+            font-weight: 700;
+            font-size: 1.25rem;
+            color: var(--primary);
+        }
+        main {
+            flex: 1;
+            max-width: 1000px;
+            margin: 2rem auto;
+            padding: 0 1rem;
+            width: 100%;
+            box-sizing: border-box;
+        }
+        .card {
+            background: var(--card-bg);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 2rem;
+            margin-bottom: 1.5rem;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+        }
+        h1, h2 {
+            margin-top: 0;
+        }
+        .badge {
+            display: inline-block;
+            background: #dcfce7;
+            color: #166534;
+            padding: 0.25rem 0.75rem;
+            border-radius: 9999px;
+            font-size: 0.875rem;
+            font-weight: 600;
+        }
+        .modules-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 1.5rem;
+            margin-top: 1rem;
+        }
+        .module-item {
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 1.25rem;
+            background: #fdfdfd;
+        }
+        .module-item h3 {
+            margin-top: 0;
+            color: var(--primary-dark);
+        }
+        footer {
+            text-align: center;
+            padding: 1.5rem;
+            color: var(--text-muted);
+            border-top: 1px solid var(--border);
+            background: var(--card-bg);
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <div class="logo">Больше чем здоровье</div>
+        <div>
+            <span class="badge">Кабинет пациентки</span>
+        </div>
+    </header>
+    <main>
+        <div class="card">
+            <h1>Интенсив «Беременность без тревоги»</h1>
+            <p style="color: var(--text-muted);">Понятный путь к здоровой беременности под контролем врача-терапевта, нефролога и нутрициолога.</p>
+            <div style="margin-top: 1rem;">
+                <strong>Статус доступа:</strong> <span class="badge">Активен</span>
+            </div>
+        </div>
+
+        <div class="card">
+            <h2>Программа интенсива</h2>
+            <div class="modules-grid">
+                <div class="module-item">
+                    <h3>Модуль 1. Первый триместр</h3>
+                    <p>Адаптация организма, токсикоз, восполнение дефицитов и безопасные препараты.</p>
+                </div>
+                <div class="module-item">
+                    <h3>Модуль 2. Второй триместр</h3>
+                    <p>Скрининги, анализы, профилактика гестозов и отёков, нутритивная поддержка.</p>
+                </div>
+                <div class="module-item">
+                    <h3>Модуль 3. Третий триместр</h3>
+                    <p>Подготовка почек, сосудистой системы и контроль самочувствия перед родами.</p>
+                </div>
+                <div class="module-item">
+                    <h3>Модуль 4. Восстановление после родов</h3>
+                    <p>Чек-ап показателей здоровья, поддержка лактации и возвращение ресурсов.</p>
+                </div>
+            </div>
+        </div>
+    </main>
+    <footer>
+        <p>© Больше чем здоровье. Все права защищены.</p>
+    </footer>
+</body>
+</html>
