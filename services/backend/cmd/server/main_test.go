@@ -7,6 +7,10 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"zdorovie/backend/internal/config"
+	"zdorovie/backend/internal/db"
+	"zdorovie/backend/internal/httpapi"
 )
 
 type mockChecker struct {
@@ -23,13 +27,13 @@ func (m mockChecker) CheckRedis(ctx context.Context) error {
 }
 
 func TestHealthz_Healthy(t *testing.T) {
-	cfg := Config{AppEnv: "test"}
-	checker := mockChecker{dbErr: nil, redisErr: nil}
-	mux := SetupRouter(cfg, checker)
+	cfg := config.Config{AppEnv: "test"}
+	srv := httpapi.NewServer(cfg, nil, nil, nil, nil, nil, nil, nil, mockChecker{})
+	h := srv.Handler()
 
 	req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
 	rec := httptest.NewRecorder()
-	mux.ServeHTTP(rec, req)
+	h.ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected 200 OK, got %d", rec.Code)
@@ -47,13 +51,13 @@ func TestHealthz_Healthy(t *testing.T) {
 }
 
 func TestHealthz_Degraded(t *testing.T) {
-	cfg := Config{AppEnv: "test"}
-	checker := mockChecker{dbErr: errors.New("connection refused"), redisErr: nil}
-	mux := SetupRouter(cfg, checker)
+	cfg := config.Config{AppEnv: "test"}
+	srv := httpapi.NewServer(cfg, nil, nil, nil, nil, nil, nil, nil, mockChecker{dbErr: errors.New("connection refused")})
+	h := srv.Handler()
 
 	req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
 	rec := httptest.NewRecorder()
-	mux.ServeHTTP(rec, req)
+	h.ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusServiceUnavailable {
 		t.Fatalf("expected 503 Service Unavailable, got %d", rec.Code)
@@ -74,17 +78,17 @@ func TestHealthz_Degraded(t *testing.T) {
 }
 
 func TestMaxWebhook_Auth(t *testing.T) {
-	cfg := Config{
-		AppEnv:    "test",
-		MaxSecret: "test_secret_123",
+	cfg := config.Config{
+		AppEnv:           "test",
+		MaxWebhookSecret: "test_secret_123",
 	}
-	checker := mockChecker{}
-	mux := SetupRouter(cfg, checker)
+	srv := httpapi.NewServer(cfg, nil, nil, nil, nil, nil, nil, nil, mockChecker{})
+	h := srv.Handler()
 
 	t.Run("Method Not Allowed on GET", func(t *testing.T) {
 		req := httptest.NewRequest(http.MethodGet, "/api/v1/webhooks/max", nil)
 		rec := httptest.NewRecorder()
-		mux.ServeHTTP(rec, req)
+		h.ServeHTTP(rec, req)
 		if rec.Code != http.StatusMethodNotAllowed {
 			t.Errorf("expected 405 Method Not Allowed, got %d", rec.Code)
 		}
@@ -93,7 +97,7 @@ func TestMaxWebhook_Auth(t *testing.T) {
 	t.Run("Unauthorized on missing or invalid secret", func(t *testing.T) {
 		req := httptest.NewRequest(http.MethodPost, "/api/v1/webhooks/max", strings.NewReader(`{}`))
 		rec := httptest.NewRecorder()
-		mux.ServeHTTP(rec, req)
+		h.ServeHTTP(rec, req)
 		if rec.Code != http.StatusUnauthorized {
 			t.Errorf("expected 401 Unauthorized, got %d", rec.Code)
 		}
@@ -101,7 +105,7 @@ func TestMaxWebhook_Auth(t *testing.T) {
 		reqInvalid := httptest.NewRequest(http.MethodPost, "/api/v1/webhooks/max", strings.NewReader(`{}`))
 		reqInvalid.Header.Set("X-Max-Bot-Api-Secret", "wrong_secret")
 		recInvalid := httptest.NewRecorder()
-		mux.ServeHTTP(recInvalid, reqInvalid)
+		h.ServeHTTP(recInvalid, reqInvalid)
 		if recInvalid.Code != http.StatusUnauthorized {
 			t.Errorf("expected 401 Unauthorized, got %d", recInvalid.Code)
 		}
@@ -111,7 +115,7 @@ func TestMaxWebhook_Auth(t *testing.T) {
 		req := httptest.NewRequest(http.MethodPost, "/api/v1/webhooks/max", strings.NewReader(`{"update_type":"message_created","timestamp":1}`))
 		req.Header.Set("X-Max-Bot-Api-Secret", "test_secret_123")
 		rec := httptest.NewRecorder()
-		mux.ServeHTTP(rec, req)
+		h.ServeHTTP(rec, req)
 		if rec.Code != http.StatusOK {
 			t.Errorf("expected 200 OK, got %d", rec.Code)
 		}
@@ -124,7 +128,7 @@ func TestMaxWebhook_Auth(t *testing.T) {
 		req := httptest.NewRequest(http.MethodPost, "/api/v1/webhooks/max", strings.NewReader(`{"event":"test"}`))
 		req.Header.Set("X-Max-Bot-Api-Secret", "test_secret_123")
 		rec := httptest.NewRecorder()
-		mux.ServeHTTP(rec, req)
+		h.ServeHTTP(rec, req)
 		if rec.Code != http.StatusBadRequest {
 			t.Errorf("expected 400 Bad Request, got %d", rec.Code)
 		}
@@ -134,30 +138,15 @@ func TestMaxWebhook_Auth(t *testing.T) {
 		req := httptest.NewRequest(http.MethodPost, "/api/v1/webhooks/max", strings.NewReader(`{not json`))
 		req.Header.Set("X-Max-Bot-Api-Secret", "test_secret_123")
 		rec := httptest.NewRecorder()
-		mux.ServeHTTP(rec, req)
+		h.ServeHTTP(rec, req)
 		if rec.Code != http.StatusBadRequest {
 			t.Errorf("expected 400 Bad Request, got %d", rec.Code)
 		}
 	})
 }
 
-func TestDefaultChecker_NoDatabaseCredentials(t *testing.T) {
-	checker, err := NewDefaultChecker(context.Background(), Config{AppEnv: "test"})
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	defer checker.Close()
-
-	if checker.pool != nil {
-		t.Errorf("expected no pool without credentials")
-	}
-	if err := checker.CheckDB(context.Background()); err == nil {
-		t.Errorf("expected CheckDB error without credentials")
-	}
-}
-
-func TestDefaultChecker_PoolCreatedOnce(t *testing.T) {
-	cfg := Config{
+func TestStore_PoolCreatedOnce(t *testing.T) {
+	cfg := config.Config{
 		AppEnv:       "test",
 		PostgresHost: "127.0.0.1",
 		PostgresPort: "1",
@@ -165,49 +154,50 @@ func TestDefaultChecker_PoolCreatedOnce(t *testing.T) {
 		PostgresUser: "user",
 		PostgresPass: "pass",
 	}
-	checker, err := NewDefaultChecker(context.Background(), cfg)
+	store, err := db.New(context.Background(), cfg.PostgresDSN())
 	if err != nil {
 		t.Fatalf("pool creation must not require a reachable database: %v", err)
 	}
-	defer checker.Close()
+	defer store.Close()
 
-	pool := checker.pool
+	pool := store.Pool
 	if pool == nil {
 		t.Fatal("expected pool to be created")
 	}
 	for i := 0; i < 2; i++ {
-		if err := checker.CheckDB(context.Background()); err == nil {
-			t.Errorf("expected CheckDB error for unreachable database")
+		if err := store.Ping(context.Background()); err == nil {
+			t.Errorf("expected Ping error for unreachable database")
 		}
 	}
-	if checker.pool != pool {
+	if store.Pool != pool {
 		t.Errorf("expected the same pool to be reused between checks")
 	}
 }
 
 func TestYooKassaWebhook(t *testing.T) {
-	cfg := Config{
+	cfg := config.Config{
 		AppEnv:       "test",
+		YooMode:      "live",
 		YooShopID:    "test_shop",
 		YooSecretKey: "test_key",
 	}
-	checker := mockChecker{}
-	mux := SetupRouter(cfg, checker)
+	srv := httpapi.NewServer(cfg, nil, nil, nil, nil, nil, nil, nil, mockChecker{})
+	h := srv.Handler()
 
 	t.Run("Method Not Allowed on GET", func(t *testing.T) {
 		req := httptest.NewRequest(http.MethodGet, "/api/v1/webhooks/yukassa", nil)
 		rec := httptest.NewRecorder()
-		mux.ServeHTTP(rec, req)
+		h.ServeHTTP(rec, req)
 		if rec.Code != http.StatusMethodNotAllowed {
 			t.Errorf("expected 405 Method Not Allowed, got %d", rec.Code)
 		}
 	})
 
 	t.Run("Service Unavailable when credentials missing", func(t *testing.T) {
-		unconfiguredMux := SetupRouter(Config{AppEnv: "test"}, checker)
+		unconfigured := httpapi.NewServer(config.Config{AppEnv: "test", YooMode: "live"}, nil, nil, nil, nil, nil, nil, nil, mockChecker{}).Handler()
 		req := httptest.NewRequest(http.MethodPost, "/api/v1/webhooks/yukassa", strings.NewReader(`{}`))
 		rec := httptest.NewRecorder()
-		unconfiguredMux.ServeHTTP(rec, req)
+		unconfigured.ServeHTTP(rec, req)
 		if rec.Code != http.StatusServiceUnavailable {
 			t.Errorf("expected 503 Service Unavailable, got %d", rec.Code)
 		}
@@ -216,7 +206,7 @@ func TestYooKassaWebhook(t *testing.T) {
 	t.Run("Successful receipt with credentials", func(t *testing.T) {
 		req := httptest.NewRequest(http.MethodPost, "/api/v1/webhooks/yukassa", strings.NewReader(`{"type":"notification"}`))
 		rec := httptest.NewRecorder()
-		mux.ServeHTTP(rec, req)
+		h.ServeHTTP(rec, req)
 		if rec.Code != http.StatusOK {
 			t.Errorf("expected 200 OK, got %d", rec.Code)
 		}

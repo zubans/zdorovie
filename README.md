@@ -71,12 +71,13 @@
 - `redis`: Брокер сообщений Redis 7 с томом `redis_data` для очередей задач Asynq (`watermark`, `audio_transcribe`, `text_summarize`, `notifications`).
 - `minio`: S3-хранилище с томом `minio_data`.
 - `minio-init`: Одноразовый контейнер на базе `minio/mc`, автоматически создающий приватные бакеты `zdorovie-master`, `zdorovie-client-materials`, `zdorovie-consultations`.
-- `backend`: REST API сервис на Go (вебхуки MAX и ЮKassa, проверка здоровья, FSM).
-- `worker`: Фоновый Go-воркер обработки задач генерации защитных водяных знаков на PDF.
-- `ml-worker`: Python-воркер транскрибации аудиозаписей встреч с `ffmpeg` и интеграцией со структурированием саммари.
-- `frontend-cabinet`: Веб-кабинет пациентки (Nginx-контейнер со статическим SPA-каркасом).
-- `frontend-admin`: Панель врача/CRM (Nginx-контейнер со статическим SPA-каркасом).
-- `nginx`: Корневой реверс-прокси, маршрутизирующий запросы и поддерживающий загрузку аудиофайлов размером до 500 МБ.
+- `backend`: REST API сервис на Go (вебхуки MAX и ЮKassa, FSM-бот, Magic Link / OTP / JWT / API Token авторизация, ЛК, CRM, планировщик напоминаний, чанковая загрузка аудио, генерация PDF-выписок).
+- `worker`: Фоновый Go-воркер Asynq — скачивает мастер-PDF из MinIO, наносит именные кириллические водяные знаки и колонтитулы (`DejaVuSans` + `pdfcpu`), рассылает email-уведомления.
+- `ml-worker`: Python-воркер — нормализует аудио (`ffmpeg` 16кГц моно WAV), выполняет транскрибацию (`mock` или `faster_whisper`), маскирует ПДн (152-ФЗ) и формирует черновик клинического саммари (`mock` / `yandexgpt` / `gigachat`) для врача.
+- `frontend-cabinet`: Веб-кабинет пациентки (Vue 3 + Vite SPA: вход по Magic Link / Email OTP, дашборд, модули, статус водяных знаков и скачивание PDF по pre-signed URL, 3 режима консультаций, анализы, опубликованные заключения, продление доступа).
+- `frontend-admin`: Панель врача и CRM (Vue 3 + Vite SPA: аналитика, очереди, пациентки и подписки, заказы и ручное одобрение канала MAX, загрузка мастер-PDF и тарифов, ответы на вопросы из бота, интерактивный плеер с кликабельной стенограммой Whisper и утверждение рекомендаций Human-in-the-Loop).
+- `clients/desktop-recorder`: Исходный код Windows-клиента на C# (.NET 8 WPF + NAudio) для захвата системного звука Телемоста/VK (WASAPI Loopback) + микрофона с локальным кэшем и чанковой отправкой.
+- `nginx`: Корневой реверс-прокси, маршрутизирующий `/cabinet/`, `/admin/`, `/api/`, `/webhooks/`, `/s3/` и поддерживающий загрузку аудиофайлов размером до 500 МБ.
 
 ---
 
@@ -115,14 +116,23 @@
 - `make ps` — Просмотр состояния сервисов и healthcheck.
 - `make init-db` — Повторно применить DDL-схему к базе данных.
 - `make test` — Юнит-тесты Go для backend и worker в контейнере `golang`; поднятый стенд не нужен.
+- `make test-ml` — Юнит-тесты Python для `ml-worker` (маскирование ПДн, аудио-конвейер, мок STT/LLM).
 - `make smoke` — Проверка `/healthz` запущенного стенда (через Nginx или напрямую на порт 8080).
 - `make clean` — Остановить сервисы и очистить тома данных (volumes).
 
+## Доступ и режимы разработки
+
+- По умолчанию в `.env.example` включены безопасные режимы `MAX_MODE=mock`, `YOO_MODE=mock`, `EMAIL_MODE=mock`, `STT_PROVIDER=mock`, `LLM_PROVIDER=mock`.
+- Учётная запись врача/администратора для входа в `/admin/`: `ADMIN_EMAIL` / `ADMIN_PASSWORD` (по умолчанию `doctor@zdorovie.local` / `zdorovie_doctor_pass`), а `DOCTOR_API_TOKEN` используется Windows-рекордером.
+- Для тестовой оплаты без реальной кассы ЮKassa используется встроенный локальный экран подтверждения `/api/v1/dev/mock-pay`. Для переключения на реальные API задайте `MAX_MODE=live`, `YOO_MODE=live`, `STT_PROVIDER=faster_whisper`, `LLM_PROVIDER=yandexgpt` (или `gigachat`) и соответствующие ключи в `.env`.
+
 ---
 
-## Локальное тестирование вебхуков MAX и ЮKassa
+## Локальное тестирование MAX-бота и вебхуков (MAX и ЮKassa)
 
-Для получения вебхуков от `platform-api2.max.ru` и ЮKassa на локальный стенд используйте HTTPS-туннель (например, [ngrok](https://ngrok.com/) или localtunnel):
+В локальном окружении (когда `PUBLIC_BASE_URL` без `https://`, например `http://localhost`) при `MAX_MODE=live` и заданном `MAX_BOT_TOKEN` сервис `backend` автоматически запускает long-polling `GET /updates` к `https://platform-api.max.ru` (туннель для MAX не обязателен).
+
+Для приёма вебхуков от `platform-api.max.ru` (при деплое или проверке webhook-режима) и ЮKassa на локальный стенд используйте HTTPS-туннель (например, [ngrok](https://ngrok.com/) или localtunnel):
 
 ```bash
 ngrok http 80

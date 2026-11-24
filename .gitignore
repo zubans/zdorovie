@@ -11,6 +11,8 @@ minio_data/
 
 # Binaries and build artifacts
 bin/
+obj/
+publish/
 dist/
 build/
 *.exe
