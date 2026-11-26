@@ -47,7 +47,7 @@ services:
     restart: unless-stopped
 
   minio:
-    image: minio/minio:RELEASE.2024-05-10T01-41-38Z
+    image: quay.io/minio/minio:RELEASE.2025-04-22T22-12-26Z
     container_name: zdorovie-minio
     command: server /data --console-address ":9001"
     environment:
@@ -56,7 +56,7 @@ services:
     volumes:
       - minio_data:/data
     ports:
-      - "9000:9000"
+      - "${MINIO_API_PORT:-9000}:9000"
       - "${MINIO_CONSOLE_PORT:-9001}:9001"
     healthcheck:
       # curl в образе MinIO нет; встроенный клиент mc с алиасом local проверяет готовность сервера
@@ -70,7 +70,7 @@ services:
     restart: unless-stopped
 
   minio-init:
-    image: minio/mc:RELEASE.2024-05-09T17-04-24Z
+    image: quay.io/minio/mc:RELEASE.2025-04-16T18-13-26Z
     container_name: zdorovie-minio-init
     depends_on:
       minio:
@@ -104,6 +104,7 @@ services:
     environment:
       APP_ENV: ${APP_ENV:-local}
       APP_DEBUG: ${APP_DEBUG:-true}
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-http://localhost}
       PORT: ${BACKEND_PORT:-8080}
       POSTGRES_HOST: ${POSTGRES_HOST:-postgres}
       POSTGRES_PORT: ${POSTGRES_PORT:-5432}
@@ -115,18 +116,33 @@ services:
       REDIS_PASSWORD: ${REDIS_PASSWORD:-}
       MINIO_ENDPOINT: ${MINIO_ENDPOINT:-minio:9000}
       MINIO_PUBLIC_ENDPOINT: ${MINIO_PUBLIC_ENDPOINT:-http://localhost/s3}
+      MINIO_USE_SSL: ${MINIO_USE_SSL:-false}
       MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minio_admin}
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minio_secret_key}
       MINIO_BUCKET_MASTER: ${MINIO_BUCKET_MASTER:-zdorovie-master}
       MINIO_BUCKET_CLIENT: ${MINIO_BUCKET_CLIENT:-zdorovie-client-materials}
       MINIO_BUCKET_CONSULTATIONS: ${MINIO_BUCKET_CONSULTATIONS:-zdorovie-consultations}
-      MAX_API_URL: ${MAX_API_URL:-https://platform-api2.max.ru}
+      MAX_MODE: ${MAX_MODE:-mock}
+      MAX_API_URL: ${MAX_API_URL:-https://platform-api.max.ru}
       MAX_BOT_TOKEN: ${MAX_BOT_TOKEN:-test_max_bot_token}
       MAX_WEBHOOK_SECRET: ${MAX_WEBHOOK_SECRET:-test_max_webhook_secret_key_1234567890}
+      YOO_MODE: ${YOO_MODE:-mock}
+      YOO_VERIFY_IP: ${YOO_VERIFY_IP:-false}
       YOO_SHOP_ID: ${YOO_SHOP_ID:-test_shop_id}
       YOO_SECRET_KEY: ${YOO_SECRET_KEY:-test_secret_key}
       YOO_RETURN_URL: ${YOO_RETURN_URL:-http://localhost/cabinet/payment-success}
       JWT_SECRET: ${JWT_SECRET:-default_secret_key_must_be_at_least_32_characters_long_for_security}
+      MAGIC_LINK_BASE_URL: ${MAGIC_LINK_BASE_URL:-http://localhost/cabinet/auth/magic}
+      MAGIC_LINK_TTL_MINUTES: ${MAGIC_LINK_TTL_MINUTES:-30}
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-doctor@zdorovie.local}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-zdorovie_doctor_pass}
+      DOCTOR_API_TOKEN: ${DOCTOR_API_TOKEN:-zdorovie_doctor_agent_token_123456}
+      EMAIL_MODE: ${EMAIL_MODE:-mock}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASS: ${SMTP_PASS:-}
+      SMTP_FROM: ${SMTP_FROM:-noreply@zdorovie.local}
     ports:
       - "${BACKEND_HOST_PORT:-8080}:8080"
     healthcheck:
@@ -151,6 +167,8 @@ services:
         condition: service_healthy
       minio:
         condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
     environment:
       APP_ENV: ${APP_ENV:-local}
       POSTGRES_HOST: ${POSTGRES_HOST:-postgres}
@@ -162,10 +180,21 @@ services:
       REDIS_PORT: ${REDIS_PORT:-6379}
       REDIS_PASSWORD: ${REDIS_PASSWORD:-}
       MINIO_ENDPOINT: ${MINIO_ENDPOINT:-minio:9000}
+      MINIO_USE_SSL: ${MINIO_USE_SSL:-false}
       MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minio_admin}
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minio_secret_key}
       MINIO_BUCKET_MASTER: ${MINIO_BUCKET_MASTER:-zdorovie-master}
       MINIO_BUCKET_CLIENT: ${MINIO_BUCKET_CLIENT:-zdorovie-client-materials}
+      MINIO_BUCKET_CONSULTATIONS: ${MINIO_BUCKET_CONSULTATIONS:-zdorovie-consultations}
+      MAX_MODE: ${MAX_MODE:-mock}
+      MAX_API_URL: ${MAX_API_URL:-https://platform-api.max.ru}
+      MAX_BOT_TOKEN: ${MAX_BOT_TOKEN:-test_max_bot_token}
+      EMAIL_MODE: ${EMAIL_MODE:-mock}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASS: ${SMTP_PASS:-}
+      SMTP_FROM: ${SMTP_FROM:-noreply@zdorovie.local}
     networks:
       - zdorovie-network
     restart: unless-stopped
@@ -176,15 +205,35 @@ services:
       dockerfile: Dockerfile
     container_name: zdorovie-ml-worker
     depends_on:
+      postgres:
+        condition: service_healthy
       redis:
         condition: service_healthy
+      minio:
+        condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
     environment:
+      POSTGRES_HOST: ${POSTGRES_HOST:-postgres}
+      POSTGRES_PORT: ${POSTGRES_PORT:-5432}
+      POSTGRES_DB: ${POSTGRES_DB:-zdorovie_db}
+      POSTGRES_USER: ${POSTGRES_USER:-zdorovie_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-zdorovie_secret}
       REDIS_HOST: ${REDIS_HOST:-redis}
       REDIS_PORT: ${REDIS_PORT:-6379}
       REDIS_PASSWORD: ${REDIS_PASSWORD:-}
       MINIO_ENDPOINT: ${MINIO_ENDPOINT:-minio:9000}
+      MINIO_USE_SSL: ${MINIO_USE_SSL:-false}
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minio_admin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minio_secret_key}
       MINIO_BUCKET_CONSULTATIONS: ${MINIO_BUCKET_CONSULTATIONS:-zdorovie-consultations}
+      STT_PROVIDER: ${STT_PROVIDER:-mock}
+      WHISPER_MODEL: ${WHISPER_MODEL:-large-v3}
+      WHISPER_COMPUTE_TYPE: ${WHISPER_COMPUTE_TYPE:-int8}
       LLM_PROVIDER: ${LLM_PROVIDER:-mock}
+      YANDEX_GPT_API_KEY: ${YANDEX_GPT_API_KEY:-}
+      YANDEX_GPT_FOLDER_ID: ${YANDEX_GPT_FOLDER_ID:-}
+      GIGACHAT_AUTH_KEY: ${GIGACHAT_AUTH_KEY:-}
     networks:
       - zdorovie-network
     restart: unless-stopped

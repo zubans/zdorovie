@@ -1,0 +1,70 @@
+<Window x:Class="ZdorovieRecorder.Wpf.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Рекордер консультаций — Больше чем здоровье"
+        Height="520" Width="580" WindowStartupLocation="CenterScreen" Background="#F8FAFC">
+    <Grid Margin="20">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
+
+        <StackPanel Grid.Row="0" Margin="0,0,0,14">
+            <TextBlock Text="Рекордер онлайн-консультаций (WASAPI + Микрофон)" FontSize="18" FontWeight="Bold" Foreground="#163024"/>
+            <TextBlock Text="Автоматическая запись разговора с Телемост/VK и отправка на ИИ-расшифровку" FontSize="12" Foreground="#64748B"/>
+        </StackPanel>
+
+        <Border Grid.Row="1" Background="White" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="8" Padding="12" Margin="0,0,0,12">
+            <StackPanel>
+                <TextBlock Text="URL сервера API:" FontWeight="SemiBold" Margin="0,0,0,4"/>
+                <TextBox x:Name="ServerUrlBox" Text="http://localhost" Margin="0,0,0,8" Padding="6"/>
+
+                <TextBlock Text="API-токен врача (Bearer):" FontWeight="SemiBold" Margin="0,0,0,4"/>
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <PasswordBox x:Name="TokenBox" Padding="6" Margin="0,0,8,0"/>
+                    <Button Grid.Column="1" Content="Загрузить слоты" Click="LoadSlots_Click" Padding="12,6" Background="#2D6A4F" Foreground="White"/>
+                </Grid>
+            </StackPanel>
+        </Border>
+
+        <Border Grid.Row="2" Background="White" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="8" Padding="12" Margin="0,0,0,12">
+            <StackPanel>
+                <TextBlock Text="Выберите запланированную консультацию:" FontWeight="SemiBold" Margin="0,0,0,6"/>
+                <ComboBox x:Name="SlotsCombo" Padding="6" Margin="0,0,0,10"/>
+
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <Button x:Name="RecordBtn" Content="⏺ Начать запись консультации" Click="ToggleRecord_Click"
+                            Padding="12,10" FontSize="14" FontWeight="SemiBold" Background="#DC2626" Foreground="White"/>
+                    <TextBlock x:Name="TimerText" Grid.Column="1" Text="00:00" FontSize="20" FontWeight="Bold"
+                               VerticalAlignment="Center" Margin="16,0,4,0" Foreground="#0F172A"/>
+                </Grid>
+            </StackPanel>
+        </Border>
+
+        <StackPanel Grid.Row="3" Margin="0,0,0,10">
+            <TextBlock x:Name="StatusText" Text="Готов к работе." Foreground="#334155" Margin="0,0,0,4"/>
+            <ProgressBar x:Name="UploadBar" Height="10" Minimum="0" Maximum="100" Value="0"/>
+        </StackPanel>
+
+        <Border Grid.Row="4" Background="White" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="8" Padding="12">
+            <DockPanel>
+                <DockPanel DockPanel.Dock="Top" Margin="0,0,0,6">
+                    <TextBlock Text="Локальный буфер (отложенная отправка / защита от сбоев):" FontWeight="SemiBold"/>
+                    <Button DockPanel.Dock="Right" Content="Догрузить все" Click="RetryPending_Click" Padding="8,2" FontSize="11"/>
+                </DockPanel>
+                <ListBox x:Name="PendingList" BorderThickness="0"/>
+            </DockPanel>
+        </Border>
+    </Grid>
+</Window>

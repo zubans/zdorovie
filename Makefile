@@ -36,6 +36,10 @@ test:
 	docker run --rm -v $$(pwd)/services/backend:/app -w /app golang:1.27.4-alpine go test -v ./...
 	docker run --rm -v $$(pwd)/services/worker:/app -w /app golang:1.27.4-alpine go test -v ./...
 
+test-ml:
+	@echo "Запуск юнит-тестов Python (ml-worker)..."
+	docker run --rm -v $$(pwd)/services/ml-worker:/app -w /app python:3.11-slim python -m unittest discover -s tests -v
+
 smoke:
 	@echo "Проверка эндпоинта здоровья запущенного стенда..."
 	@curl -sf http://localhost/healthz || curl -sf http://localhost:8080/healthz
